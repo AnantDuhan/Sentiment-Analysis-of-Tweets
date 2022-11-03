@@ -7,16 +7,31 @@ Original file is located at
     https://colab.research.google.com/drive/1uULaa-NzuJENkwmGA5vPjZEb2m5Z-j4b
 """
 
+from gensim.models.doc2vec import TaggedDocument
+from sklearn.metrics import f1_score, precision_score, recall_score, accuracy_score
+from sklearn.metrics import confusion_matrix
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.linear_model import LogisticRegression
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.svm import SVC
+from xgboost import XGBClassifier
+from sklearn.feature_extraction.text import CountVectorizer
+from wordcloud import WordCloud
+from sklearn.preprocessing import StandardScaler
+from sklearn.model_selection import train_test_split
+import gensim
 import numpy as np
 import pandas as pd
+import re
+import nltk
 
 import matplotlib.pyplot as plt
 import seaborn as sns
 
 import warnings
 
-train = pd.read_csv('drive/My Drive/Projects/Twitter Sentiment/train_tweet.csv')
-test = pd.read_csv('drive/My Drive/Projects/Twitter Sentiment/test_tweets.csv')
+train = pd.read_csv('train_tweet.csv')
+test = pd.read_csv('test_tweets.csv')
 
 print(train.shape)
 print(test.shape)
@@ -57,8 +72,6 @@ plt.title('variation of length')
 plt.xlabel('Length')
 plt.show()
 
-from sklearn.feature_extraction.text import CountVectorizer
-
 
 cv = CountVectorizer(stop_words = 'english')
 words = cv.fit_transform(train.tweet)
@@ -72,8 +85,6 @@ frequency = pd.DataFrame(words_freq, columns=['word', 'freq'])
 
 frequency.head(30).plot(x='word', y='freq', kind='bar', figsize=(15, 7), color = 'blue')
 plt.title("Most Frequently Occuring Words - Top 30")
-
-from wordcloud import WordCloud
 
 wordcloud = WordCloud(background_color = 'white', width = 1000, height = 1000).generate_from_frequencies(dict(words_freq))
 
@@ -145,13 +156,10 @@ plt.show()
 # tokenizing the words present in the training set
 tokenized_tweet = train['tweet'].apply(lambda x: x.split()) 
 
-# importing gensim
-import gensim
-
 # creating a word to vector model
 model_w2v = gensim.models.Word2Vec(
             tokenized_tweet,
-            size=200, # desired no. of features/independent variables 
+            vector_size=200, # desired no. of features/independent variables 
             window=5, # context window size
             min_count=2,
             sg = 1, # 1 for skip-gram model
@@ -172,12 +180,11 @@ model_w2v.wv.most_similar(negative = "hate")
 
 from tqdm import tqdm
 tqdm.pandas(desc="progress-bar")
-from gensim.models.doc2vec import LabeledSentence
 
 def add_label(twt):
     output = []
     for i, s in zip(twt.index, twt):
-        output.append(LabeledSentence(s, ["tweet_" + str(i)]))
+        output.append(TaggedDocument(s, ["tweet_" + str(i)]))
     return output
 
 # label all the tweets
@@ -186,9 +193,6 @@ labeled_tweets = add_label(tokenized_tweet)
 labeled_tweets[:6]
 
 # removing unwanted patterns from the data
-
-import re
-import nltk
 
 nltk.download('stopwords')
 from nltk.corpus import stopwords
@@ -228,7 +232,7 @@ for i in range(0, 17197):
 
 # creating bag of words
 
-from sklearn.feature_extraction.text import CountVectorizer
+
 
 cv = CountVectorizer(max_features = 2500)
 x = cv.fit_transform(train_corpus).toarray()
@@ -239,7 +243,7 @@ print(y.shape)
 
 # creating bag of words
 
-from sklearn.feature_extraction.text import CountVectorizer
+
 
 cv = CountVectorizer(max_features = 2500)
 x_test = cv.fit_transform(test_corpus).toarray()
@@ -247,8 +251,6 @@ x_test = cv.fit_transform(test_corpus).toarray()
 print(x_test.shape)
 
 # splitting the training data into train and valid sets
-
-from sklearn.model_selection import train_test_split
 
 x_train, x_valid, y_train, y_valid = train_test_split(x, y, test_size = 0.25, random_state = 42)
 
@@ -258,98 +260,233 @@ print(y_train.shape)
 print(y_valid.shape)
 
 # standardization
-
-from sklearn.preprocessing import StandardScaler
-
 sc = StandardScaler()
 
 x_train = sc.fit_transform(x_train)
 x_valid = sc.transform(x_valid)
 x_test = sc.transform(x_test)
 
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import confusion_matrix
-from sklearn.metrics import f1_score
 
+# RandomForestClassifier Algo
 model = RandomForestClassifier()
 model.fit(x_train, y_train)
 
 y_pred = model.predict(x_valid)
 
+# confusion matrix
+conf_matrix = confusion_matrix(y_valid, y_pred)
+
+recall_score = conf_matrix[0][0] / \
+    (conf_matrix[0][0] + conf_matrix[0][1])
+precision_score = conf_matrix[0][0] / \
+    (conf_matrix[0][0] + conf_matrix[1][0])
+accuracy_score = (conf_matrix[0][0] + conf_matrix[1][1]) / \
+    (conf_matrix[0][0] + conf_matrix[0][1] +
+     conf_matrix[1][0] + conf_matrix[1][1])
+
 print("Training Accuracy :", model.score(x_train, y_train))
 print("Validation Accuracy :", model.score(x_valid, y_valid))
+print("Precision score :", precision_score)
+print("Recall score :", recall_score)
+print("Accuracy score :", accuracy_score)
+
 
 # calculating the f1 score for the validation set
-print("F1 score :", f1_score(y_valid, y_pred))
+print("f1 score :", f1_score(y_valid, y_pred))
 
-# confusion matrix
-cm = confusion_matrix(y_valid, y_pred)
-print(cm)
+# print(cm)
 
-from sklearn.linear_model import LogisticRegression
+fig, ax = plt.subplots(figsize=(5, 5))
+ax.matshow(conf_matrix, cmap=plt.cm.Oranges, alpha=0.3)
+for i in range(conf_matrix.shape[0]):
+    for j in range(conf_matrix.shape[1]):
+        ax.text(x=j, y=i, s=conf_matrix[i, j],
+                va='center', ha='center', size='xx-large')
 
+plt.xlabel('Predictions', fontsize=18)
+plt.ylabel('Actuals', fontsize=18)
+plt.title('Confusion Matrix', fontsize=18)
+plt.show()
+
+
+
+
+# LogisticRegression Algo
 model = LogisticRegression()
 model.fit(x_train, y_train)
 
 y_pred = model.predict(x_valid)
 
+# confusion matrix
+conf_matrix = confusion_matrix(y_valid, y_pred)
+
+for i in range(conf_matrix.shape[0]):
+    for j in range(conf_matrix.shape[1]):
+        recall_score = conf_matrix[0][0] / \
+            (conf_matrix[0][0] + conf_matrix[0][1])
+        precision_score = conf_matrix[0][0] / \
+            (conf_matrix[0][0] + conf_matrix[1][0])
+        accuracy_score = (conf_matrix[0][0] + conf_matrix[1][1]) / \
+            (conf_matrix[0][0] + conf_matrix[0][1] +
+             conf_matrix[1][0] + conf_matrix[1][1])
+
 print("Training Accuracy :", model.score(x_train, y_train))
 print("Validation Accuracy :", model.score(x_valid, y_valid))
+print("Precision score :", precision_score)
+print("Recall score :", recall_score)
+print("Accuracy score :", accuracy_score)
+
 
 # calculating the f1 score for the validation set
 print("f1 score :", f1_score(y_valid, y_pred))
 
-# confusion matrix
-cm = confusion_matrix(y_valid, y_pred)
-print(cm)
+# print(cm)
 
-from sklearn.tree import DecisionTreeClassifier
+fig, ax = plt.subplots(figsize=(5, 5))
+ax.matshow(conf_matrix, cmap=plt.cm.Oranges, alpha=0.3)
+for i in range(conf_matrix.shape[0]):
+    for j in range(conf_matrix.shape[1]):
+        ax.text(x=j, y=i, s=conf_matrix[i, j],
+                va='center', ha='center', size='xx-large')
+
+plt.xlabel('Predictions', fontsize=18)
+plt.ylabel('Actuals', fontsize=18)
+plt.title('Confusion Matrix', fontsize=18)
+plt.show()
+
+
+
+# DecisionTreeClassifier Algo
 
 model = DecisionTreeClassifier()
 model.fit(x_train, y_train)
 
 y_pred = model.predict(x_valid)
 
+# confusion matrix
+conf_matrix = confusion_matrix(y_valid, y_pred)
+
+for i in range(conf_matrix.shape[0]):
+    for j in range(conf_matrix.shape[1]):
+        recall_score = conf_matrix[0][0] / \
+            (conf_matrix[0][0] + conf_matrix[0][1])
+        precision_score = conf_matrix[0][0] / \
+            (conf_matrix[0][0] + conf_matrix[1][0])
+        accuracy_score = (conf_matrix[0][0] + conf_matrix[1][1]) / \
+            (conf_matrix[0][0] + conf_matrix[0][1] +
+             conf_matrix[1][0] + conf_matrix[1][1])
+
 print("Training Accuracy :", model.score(x_train, y_train))
 print("Validation Accuracy :", model.score(x_valid, y_valid))
+print("Precision score :", precision_score)
+print("Recall score :", recall_score)
+print("Accuracy score :", accuracy_score)
+
 
 # calculating the f1 score for the validation set
 print("f1 score :", f1_score(y_valid, y_pred))
 
-# confusion matrix
-cm = confusion_matrix(y_valid, y_pred)
-print(cm)
+# print(cm)
 
-from sklearn.svm import SVC
+fig, ax = plt.subplots(figsize=(5, 5))
+ax.matshow(conf_matrix, cmap=plt.cm.Oranges, alpha=0.3)
+for i in range(conf_matrix.shape[0]):
+    for j in range(conf_matrix.shape[1]):
+        ax.text(x=j, y=i, s=conf_matrix[i, j],
+                va='center', ha='center', size='xx-large')
 
+plt.xlabel('Predictions', fontsize=18)
+plt.ylabel('Actuals', fontsize=18)
+plt.title('Confusion Matrix', fontsize=18)
+plt.show()
+
+
+
+# SVC Algo
 model = SVC()
 model.fit(x_train, y_train)
 
 y_pred = model.predict(x_valid)
 
+# confusion matrix
+conf_matrix = confusion_matrix(y_valid, y_pred)
+
+for i in range(conf_matrix.shape[0]):
+    for j in range(conf_matrix.shape[1]):
+        recall_score = conf_matrix[0][0] / \
+            (conf_matrix[0][0] + conf_matrix[0][1])
+        precision_score = conf_matrix[0][0] / \
+            (conf_matrix[0][0] + conf_matrix[1][0])
+        accuracy_score = (conf_matrix[0][0] + conf_matrix[1][1]) / \
+            (conf_matrix[0][0] + conf_matrix[0][1] +
+             conf_matrix[1][0] + conf_matrix[1][1])
+
 print("Training Accuracy :", model.score(x_train, y_train))
 print("Validation Accuracy :", model.score(x_valid, y_valid))
+print("Precision score :", precision_score)
+print("Recall score :", recall_score)
+print("Accuracy score :", accuracy_score)
+
 
 # calculating the f1 score for the validation set
 print("f1 score :", f1_score(y_valid, y_pred))
 
-# confusion matrix
-cm = confusion_matrix(y_valid, y_pred)
-print(cm)
+# print(cm)
 
-from xgboost import XGBClassifier
+fig, ax = plt.subplots(figsize=(5, 5))
+ax.matshow(conf_matrix, cmap=plt.cm.Oranges, alpha=0.3)
+for i in range(conf_matrix.shape[0]):
+    for j in range(conf_matrix.shape[1]):
+        ax.text(x=j, y=i, s=conf_matrix[i, j],
+                va='center', ha='center', size='xx-large')
 
+plt.xlabel('Predictions', fontsize=18)
+plt.ylabel('Actuals', fontsize=18)
+plt.title('Confusion Matrix', fontsize=18)
+plt.show()
+
+
+
+
+# XGBoost Algo
 model = XGBClassifier()
 model.fit(x_train, y_train)
 
 y_pred = model.predict(x_valid)
 
+# confusion matrix
+conf_matrix = confusion_matrix(y_valid, y_pred)
+
+for i in range(conf_matrix.shape[0]):
+    for j in range(conf_matrix.shape[1]):
+        recall_score = conf_matrix[0][0] / \
+            (conf_matrix[0][0] + conf_matrix[0][1])
+        precision_score = conf_matrix[0][0] / \
+            (conf_matrix[0][0] + conf_matrix[1][0])
+        accuracy_score = (conf_matrix[0][0] + conf_matrix[1][1]) / \
+            (conf_matrix[0][0] + conf_matrix[0][1] +
+             conf_matrix[1][0] + conf_matrix[1][1])
+
 print("Training Accuracy :", model.score(x_train, y_train))
 print("Validation Accuracy :", model.score(x_valid, y_valid))
+print("Precision score :", precision_score)
+print("Recall score :", recall_score)
+print("Accuracy score :", accuracy_score)
+
 
 # calculating the f1 score for the validation set
 print("f1 score :", f1_score(y_valid, y_pred))
 
-# confusion matrix
-cm = confusion_matrix(y_valid, y_pred)
-print(cm)
+# print(cm)
+
+fig, ax = plt.subplots(figsize=(5, 5))
+ax.matshow(conf_matrix, cmap=plt.cm.Oranges, alpha=0.3)
+for i in range(conf_matrix.shape[0]):
+    for j in range(conf_matrix.shape[1]):
+        ax.text(x=j, y=i, s=conf_matrix[i, j],
+                va='center', ha='center', size='xx-large')
+
+plt.xlabel('Predictions', fontsize=18)
+plt.ylabel('Actuals', fontsize=18)
+plt.title('Confusion Matrix', fontsize=18)
+plt.show()
